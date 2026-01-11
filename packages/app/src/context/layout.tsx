@@ -194,6 +194,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       return available[Math.floor(Math.random() * available.length)]
     }
 
+    function releaseColor(project: LocalProject) {
+      const color = project.icon?.color as AvatarColorKey | undefined
+      if (color && usedColors.has(color)) {
+        usedColors.delete(color)
+      }
+    }
+
     function enrich(project: { worktree: string; expanded: boolean }) {
       const [childStore] = globalSync.child(project.worktree)
       const projectID = childStore.project
@@ -277,6 +284,11 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           server.projects.open(root)
         },
         close(directory: string) {
+          // Release color when closing a project
+          const project = list().find((p) => p.worktree === directory)
+          if (project) {
+            releaseColor(project)
+          }
           server.projects.close(directory)
         },
         expand(directory: string) {
