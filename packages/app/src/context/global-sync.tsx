@@ -26,6 +26,7 @@ import { ErrorPage, type InitError } from "../pages/error"
 import { batch, createContext, useContext, onCleanup, onMount, type ParentProps, Switch, Match } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
+import { createLruCache } from "../utils/cache"
 
 type State = {
   status: "loading" | "partial" | "complete"
@@ -79,33 +80,42 @@ function createGlobalSync() {
     provider_auth: {},
   })
 
-  const children: Record<string, ReturnType<typeof createStore<State>>> = {}
+  // Use LRU cache to prevent unbounded memory growth from directory stores
+  // Max 20 directories, with 1 hour TTL for inactive directories
+  const children = createLruCache<ReturnType<typeof createStore<State>>>({
+    maxEntries: 20,
+    ttlMs: 60 * 60 * 1000, // 1 hour
+  })
+
   function child(directory: string) {
     if (!directory) console.error("No directory provided")
-    if (!children[directory]) {
-      children[directory] = createStore<State>({
-        project: "",
-        provider: { all: [], connected: [], default: {} },
-        config: {},
-        path: { state: "", config: "", worktree: "", directory: "", home: "" },
-        status: "loading" as const,
-        agent: [],
-        command: [],
-        session: [],
-        session_status: {},
-        session_diff: {},
-        todo: {},
-        permission: {},
-        mcp: {},
-        lsp: [],
-        vcs: undefined,
-        limit: 5,
-        message: {},
-        part: {},
-      })
-      bootstrapInstance(directory)
+    const existing = children.get(directory)
+    if (existing) {
+      return existing
     }
-    return children[directory]
+    const newStore = createStore<State>({
+      project: "",
+      provider: { all: [], connected: [], default: {} },
+      config: {},
+      path: { state: "", config: "", worktree: "", directory: "", home: "" },
+      status: "loading" as const,
+      agent: [],
+      command: [],
+      session: [],
+      session_status: {},
+      session_diff: {},
+      todo: {},
+      permission: {},
+      mcp: {},
+      lsp: [],
+      vcs: undefined,
+      limit: 5,
+      message: {},
+      part: {},
+    })
+    children.set(directory, newStore)
+    bootstrapInstance(directory)
+    return newStore
   }
 
   async function loadSessions(directory: string) {

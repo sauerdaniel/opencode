@@ -8,6 +8,7 @@ import { getFilename } from "@opencode-ai/util/path"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { Persist, persisted } from "@/utils/persist"
+import { createLruCache } from "@/utils/cache"
 
 export type FileSelection = {
   startLine: number
@@ -85,6 +86,8 @@ function normalizeSelectedLines(range: SelectedLineRange): SelectedLineRange {
 const WORKSPACE_KEY = "__workspace__"
 const MAX_FILE_VIEW_SESSIONS = 20
 const MAX_VIEW_FILES = 500
+const MAX_FILE_CACHE_ENTRIES = 100
+const FILE_CACHE_TTL_MS = 30 * 60 * 1000 // 30 minutes
 
 type ViewSession = ReturnType<typeof createViewSession>
 
@@ -232,6 +235,37 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       file: {},
     })
 
+    // LRU cache for tracking file load times to enable eviction
+    const fileContentCache = createLruCache<string>({
+      maxEntries: MAX_FILE_CACHE_ENTRIES,
+      ttlMs: FILE_CACHE_TTL_MS,
+      onEvict: (path) => {
+        // Clear the content from the store when evicted, but keep metadata
+        if (store.file[path]) {
+          setStore(
+            "file",
+            path,
+            produce((draft) => {
+              draft.loaded = false
+              draft.loading = false
+              draft.content = undefined
+              draft.error = undefined
+            }),
+          )
+        }
+      },
+    })
+
+    const pruneFileContents = () => {
+      // The LRU cache handles eviction automatically via onEvict callback
+      // This function exists to manually trigger pruning if needed
+      fileContentCache.stats()
+    }
+
+    const touchFile = (path: string) => {
+      fileContentCache.set(path, path)
+    }
+
     const viewCache = new Map<string, ViewCacheEntry>()
 
     const disposeViews = () => {
@@ -311,6 +345,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
               draft.content = x.data
             }),
           )
+          touchFile(path)
         })
         .catch((e) => {
           setStore(
