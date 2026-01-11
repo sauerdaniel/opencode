@@ -164,10 +164,22 @@ export default function Layout(props: ParentProps) {
     onCleanup(() => clearInterval(interval))
   })
 
+  const toastBySession = new Map<string, number>()
+  const alertedAtBySession = new Map<string, number>()
+  const permissionAlertCooldownMs = 5000
+
+  // Cleanup toast and alert maps for a specific session
+  const cleanupSessionEntries = (directory: string, sessionID: string) => {
+    const sessionKey = `${directory}:${sessionID}`
+    const toastId = toastBySession.get(sessionKey)
+    if (toastId !== undefined) {
+      toaster.dismiss(toastId)
+      toastBySession.delete(sessionKey)
+    }
+    alertedAtBySession.delete(sessionKey)
+  }
+
   onMount(() => {
-    const toastBySession = new Map<string, number>()
-    const alertedAtBySession = new Map<string, number>()
-    const permissionAlertCooldownMs = 5000
 
     const unsub = globalSDK.event.listen((e) => {
       if (e.details?.type !== "permission.asked") return
@@ -305,6 +317,18 @@ export default function Layout(props: ParentProps) {
     globalSDK.url
 
     prefetchToken.value += 1
+
+    // Get all currently open directories
+    const openDirectories = new Set(layout.projects.list().map((p) => p.worktree))
+
+    // Remove queues for directories that are no longer open
+    for (const directory of prefetchQueues.keys()) {
+      if (!openDirectories.has(directory)) {
+        prefetchQueues.delete(directory)
+      }
+    }
+
+    // Clear pending items for remaining queues
     for (const q of prefetchQueues.values()) {
       q.pending.length = 0
       q.pendingSet.clear()
@@ -518,6 +542,14 @@ export default function Layout(props: ParentProps) {
     const sessions = store.session ?? []
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
+
+    // Cleanup toast and alert entries for archived session and its children
+    cleanupSessionEntries(session.directory, session.id)
+    for (const s of sessions) {
+      if (s.parentID === session.id) {
+        cleanupSessionEntries(session.directory, s.id)
+      }
+    }
 
     await globalSDK.client.session.update({
       directory: session.directory,
