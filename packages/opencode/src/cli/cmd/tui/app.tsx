@@ -110,10 +110,39 @@ export function tui(input: {
   // promise to prevent immediate exit
   return new Promise<void>(async (resolve) => {
     const mode = await getTerminalBackgroundColor()
+    let exitCalled = false
     const onExit = async () => {
+      if (exitCalled) return
+      exitCalled = true
       await input.onExit?.()
       resolve()
     }
+
+    // Set up signal handlers for graceful terminal cleanup
+    const setupSignalHandlers = (cleanup: () => Promise<void>) => {
+      const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"]
+
+      for (const signal of signals) {
+        process.once(signal, async () => {
+          // Only run cleanup if we're in a TTY and have a renderer to clean up
+          if (process.stdin.isTTY) {
+            // Reset terminal to a usable state
+            process.stdout.write("\x1b[?25h") // Show cursor
+            process.stdout.write("\x1b[0m") // Reset attributes
+            process.stdout.write("\x1b[r") // Reset scrolling region
+            // Exit alternate screen buffer if we're in one
+            process.stdout.write("\x1b[?1049l")
+            // Restore normal screen buffering
+            if (process.stdin.isRaw) process.stdin.setRawMode(false)
+          }
+          await cleanup()
+          process.exit(0)
+        })
+      }
+    }
+
+    // Set up signal handlers early, before TUI initialization
+    setupSignalHandlers(onExit)
 
     render(
       () => {
