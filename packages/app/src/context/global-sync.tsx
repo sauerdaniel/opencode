@@ -27,6 +27,7 @@ import { batch, createContext, useContext, onCleanup, onMount, type ParentProps,
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
 import { createLruCache } from "../utils/cache"
+import { usePlatform } from "./platform"
 
 type State = {
   status: "loading" | "partial" | "complete"
@@ -65,6 +66,7 @@ type State = {
 
 function createGlobalSync() {
   const globalSDK = useGlobalSDK()
+  const platform = usePlatform()
   const [globalStore, setGlobalStore] = createStore<{
     ready: boolean
     error?: InitError
@@ -149,6 +151,7 @@ function createGlobalSync() {
     const [store, setStore] = child(directory)
     const sdk = createOpencodeClient({
       baseUrl: globalSDK.url,
+      fetch: platform.fetch,
       directory,
       throwOnError: true,
     })
@@ -406,6 +409,7 @@ function createGlobalSync() {
       case "lsp.updated": {
         const sdk = createOpencodeClient({
           baseUrl: globalSDK.url,
+          fetch: platform.fetch,
           directory,
           throwOnError: true,
         })
