@@ -770,6 +770,14 @@ export namespace Config {
       .enum(["auto", "stacked"])
       .optional()
       .describe("Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column"),
+    streaming_throttle: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "Throttle streaming text updates to this interval in ms. Lower values = smoother but higher CPU. Default: 0 (no throttling). Recommended: 50-100ms for better performance during long sessions.",
+      ),
   })
 
   export const Server = z
