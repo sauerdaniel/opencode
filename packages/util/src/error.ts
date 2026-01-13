@@ -52,3 +52,90 @@ export abstract class NamedError extends Error {
     }),
   )
 }
+
+export namespace CommonErrors {
+  export const NotFound = NamedError.create(
+    "NotFoundError",
+    z.object({
+      resource: z.string(),
+      identifier: z.string().optional(),
+      message: z.string().optional(),
+    }),
+  )
+
+  export const ValidationError = NamedError.create(
+    "ValidationError",
+    z.object({
+      field: z.string().optional(),
+      message: z.string(),
+      value: z.any().optional(),
+    }),
+  )
+
+  export const PermissionDenied = NamedError.create(
+    "PermissionDeniedError",
+    z.object({
+      operation: z.string(),
+      resource: z.string().optional(),
+      message: z.string().optional(),
+    }),
+  )
+
+  export const Timeout = NamedError.create(
+    "TimeoutError",
+    z.object({
+      operation: z.string(),
+      timeout: z.number().optional(),
+      message: z.string().optional(),
+    }),
+  )
+
+  export const Network = NamedError.create(
+    "NetworkError",
+    z.object({
+      url: z.string().optional(),
+      method: z.string().optional(),
+      status: z.number().optional(),
+      message: z.string().optional(),
+    }),
+  )
+
+  export const IO = NamedError.create(
+    "IOError",
+    z.object({
+      operation: z.string(),
+      path: z.string().optional(),
+      message: z.string().optional(),
+    }),
+  )
+
+  export const Configuration = NamedError.create(
+    "ConfigurationError",
+    z.object({
+      key: z.string().optional(),
+      message: z.string(),
+    }),
+  )
+
+  export const Cancelled = NamedError.create(
+    "CancelledError",
+    z.object({
+      operation: z.string().optional(),
+      reason: z.string().optional(),
+    }),
+  )
+
+  export function wrapUnknown(error: unknown, context?: string): NamedError {
+    if (error instanceof NamedError) {
+      return error
+    }
+    if (error instanceof Error) {
+      return new NamedError.Unknown({
+        message: context ? `${context}: ${error.message}` : error.message,
+      })
+    }
+    return new NamedError.Unknown({
+      message: context ?? String(error),
+    })
+  }
+}

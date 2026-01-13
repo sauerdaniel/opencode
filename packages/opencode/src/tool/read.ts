@@ -1,6 +1,7 @@
 import z from "zod"
 import * as fs from "fs"
 import * as path from "path"
+import { CommonErrors } from "@opencode-ai/util/error"
 import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
@@ -53,10 +54,17 @@ export const ReadTool = Tool.define("read", {
         .slice(0, 3)
 
       if (suggestions.length > 0) {
-        throw new Error(`File not found: ${filepath}\n\nDid you mean one of these?\n${suggestions.join("\n")}`)
+        throw new CommonErrors.NotFound({
+          resource: "file",
+          identifier: filepath,
+          message: `Did you mean one of these?\n${suggestions.join("\n")}`,
+        })
       }
 
-      throw new Error(`File not found: ${filepath}`)
+      throw new CommonErrors.NotFound({
+        resource: "file",
+        identifier: filepath,
+      })
     }
 
     const isImage = file.type.startsWith("image/") && file.type !== "image/svg+xml"
@@ -85,7 +93,7 @@ export const ReadTool = Tool.define("read", {
     }
 
     const isBinary = await isBinaryFile(filepath, file)
-    if (isBinary) throw new Error(`Cannot read binary file: ${filepath}`)
+    if (isBinary) throw new CommonErrors.ValidationError({ message: `Cannot read binary file: ${filepath}` })
 
     const limit = params.limit ?? DEFAULT_READ_LIMIT
     const offset = params.offset || 0

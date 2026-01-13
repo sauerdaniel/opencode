@@ -1,4 +1,5 @@
 import z from "zod"
+import { CommonErrors } from "@opencode-ai/util/error"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
@@ -20,7 +21,7 @@ export const WebFetchTool = Tool.define("webfetch", {
   async execute(params, ctx) {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
-      throw new Error("URL must start with http:// or https://")
+      throw new CommonErrors.ValidationError({ message: "URL must start with http:// or https://" })
     }
 
     await ctx.ask({
@@ -69,18 +70,23 @@ export const WebFetchTool = Tool.define("webfetch", {
     clearTimeout(timeoutId)
 
     if (!response.ok) {
-      throw new Error(`Request failed with status code: ${response.status}`)
+      throw new CommonErrors.Network({
+        url: params.url,
+        method: "GET",
+        status: response.status,
+        message: `Request failed with status code: ${response.status}`,
+      })
     }
 
     // Check content length
     const contentLength = response.headers.get("content-length")
     if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
-      throw new Error("Response too large (exceeds 5MB limit)")
+      throw new CommonErrors.ValidationError({ message: "Response too large (exceeds 5MB limit)" })
     }
 
     const arrayBuffer = await response.arrayBuffer()
     if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-      throw new Error("Response too large (exceeds 5MB limit)")
+      throw new CommonErrors.ValidationError({ message: "Response too large (exceeds 5MB limit)" })
     }
 
     const content = new TextDecoder().decode(arrayBuffer)
