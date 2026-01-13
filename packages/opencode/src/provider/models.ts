@@ -104,4 +104,26 @@ export namespace ModelsDev {
   }
 }
 
-setInterval(() => ModelsDev.refresh(), 60 * 1000 * 60).unref()
+let intervalId: ReturnType<typeof setInterval> | undefined
+let exitHandlerRegistered = false
+
+export function startRefreshInterval() {
+  if (intervalId) return
+  intervalId = setInterval(() => ModelsDev.refresh(), 60 * 1000 * 60).unref()
+
+  // Register exit handler only once to prevent multiple registrations
+  if (!exitHandlerRegistered) {
+    exitHandlerRegistered = true
+    process.on("exit", stopRefreshInterval)
+  }
+}
+
+export function stopRefreshInterval() {
+  if (intervalId) {
+    clearInterval(intervalId)
+    intervalId = undefined
+  }
+}
+
+// Auto-start the interval on module load
+startRefreshInterval()
