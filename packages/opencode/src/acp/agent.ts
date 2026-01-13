@@ -47,7 +47,8 @@ export namespace ACP {
     private connection: AgentSideConnection
     private config: ACPConfig
     private sdk: OpencodeClient
-    private sessionManager
+    private sessionManager: ACPSessionManager
+    private sessionAbortControllers = new Map<string, AbortController>()
 
     constructor(connection: AgentSideConnection, config: ACPConfig) {
       this.connection = connection
@@ -65,8 +66,20 @@ export namespace ACP {
         { optionId: "always", kind: "allow_always", name: "Always allow" },
         { optionId: "reject", kind: "reject_once", name: "Reject" },
       ]
-      this.config.sdk.event.subscribe({ directory }).then(async (events) => {
-        for await (const event of events.stream) {
+
+      // Create and store abort controller for this session's event stream
+      const abortController = new AbortController()
+      this.sessionAbortControllers.set(sessionId, abortController)
+
+      this.config.sdk.event
+        .subscribe(
+          { directory },
+          {
+            signal: abortController.signal,
+          },
+        )
+        .then(async (events) => {
+          for await (const event of events.stream) {
           switch (event.type) {
             case "permission.asked":
               try {
@@ -344,6 +357,18 @@ export namespace ACP {
               }
           }
         }
+      })
+      .catch((error) => {
+        // Ignore abort errors - they're expected during cleanup
+        if (error?.name === "AbortError" || error?.message?.includes("abort")) {
+          log.info("event stream aborted", { sessionId })
+          return
+        }
+        log.error("event stream error", { error, sessionId })
+      })
+      .finally(() => {
+        // Clean up abort controller when stream ends
+        this.sessionAbortControllers.delete(sessionId)
       })
     }
 
@@ -958,6 +983,42 @@ export namespace ACP {
         },
         { throwOnError: true },
       )
+    }
+
+    /**
+     * Dispose of all session resources including event streams and session map entries.
+     * This should be called when the agent is being destroyed to prevent memory leaks.
+     */
+    async dispose() {
+      log.info("disposing agent", { sessionCount: this.sessionAbortControllers.size })
+
+      // Abort all event streams
+      for (const [sessionId, controller] of this.sessionAbortControllers.entries()) {
+        log.info("aborting event stream", { sessionId })
+        controller.abort()
+      }
+      this.sessionAbortControllers.clear()
+
+      // Clear all sessions from the manager
+      this.sessionManager.clear()
+    }
+
+    /**
+     * Close a specific session and clean up its resources.
+     * This should be called when a session is explicitly closed/ended.
+     */
+    closeSession(sessionId: string) {
+      log.info("closing session", { sessionId })
+
+      // Abort the event stream for this session
+      const controller = this.sessionAbortControllers.get(sessionId)
+      if (controller) {
+        controller.abort()
+        this.sessionAbortControllers.delete(sessionId)
+      }
+
+      // Remove from session manager
+      this.sessionManager.delete(sessionId)
     }
   }
 
