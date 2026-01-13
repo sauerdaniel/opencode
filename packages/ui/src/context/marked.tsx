@@ -4,6 +4,22 @@ import markedShiki from "marked-shiki"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
+import { checksum } from "@opencode-ai/util/encode"
+
+// LRU cache for code block highlighting to avoid re-highlighting during streaming
+const HIGHLIGHT_CACHE_MAX = 500
+const highlightCache = new Map<string, string>()
+
+function touchHighlightCache(key: string, value: string) {
+  highlightCache.delete(key)
+  highlightCache.set(key, value)
+
+  if (highlightCache.size <= HIGHLIGHT_CACHE_MAX) return
+
+  const first = highlightCache.keys().next().value
+  if (!first) return
+  highlightCache.delete(first)
+}
 
 registerCustomTheme("OpenCode", () => {
   return Promise.resolve({
@@ -392,6 +408,17 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
       markedShiki({
         async highlight(code, lang) {
+          // Cache key based on code content and language to avoid re-highlighting during streaming
+          const normalizedCode = code ?? ""
+          const codeHash = checksum(normalizedCode) ?? "empty"
+          const cacheKey = `${lang ?? "text"}:${codeHash}`
+
+          const cached = highlightCache.get(cacheKey)
+          if (cached) {
+            touchHighlightCache(cacheKey, cached)
+            return cached
+          }
+
           const highlighter = await getSharedHighlighter({ themes: ["OpenCode"], langs: [] })
           if (!(lang in bundledLanguages)) {
             lang = "text"
@@ -399,11 +426,13 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           if (!highlighter.getLoadedLanguages().includes(lang)) {
             await highlighter.loadLanguage(lang as BundledLanguage)
           }
-          return highlighter.codeToHtml(code, {
+          const html = highlighter.codeToHtml(normalizedCode, {
             lang: lang || "text",
             theme: "OpenCode",
             tabindex: false,
           })
+          touchHighlightCache(cacheKey, html)
+          return html
         },
       }),
     )

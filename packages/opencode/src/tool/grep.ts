@@ -48,11 +48,51 @@ export const GrepTool = Tool.define("grep", {
       stderr: "pipe",
     })
 
-    const output = await new Response(proc.stdout).text()
+    // Stream the output to avoid reading entire result set into memory
+    const reader = proc.stdout.getReader()
+    const decoder = new TextDecoder()
+    const matches = []
+    let buffer = ""
+    let byteCount = 0
+    const MAX_BYTES = 10 * 1024 * 1024 // 10MB limit to prevent memory exhaustion
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      byteCount += value.length
+      if (byteCount > MAX_BYTES) {
+        reader.cancel()
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() ?? "" // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line) continue
+
+        const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
+        if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
+
+        const lineNum = parseInt(lineNumStr, 10)
+        const lineText = lineTextParts.join("|")
+
+        // Defer file stat until after streaming to avoid blocking
+        matches.push({
+          path: filePath,
+          lineNum,
+          lineText,
+        })
+      }
+    }
+
+    // Get exit code and check for errors
     const errorOutput = await new Response(proc.stderr).text()
     const exitCode = await proc.exited
 
-    if (exitCode === 1) {
+    if (exitCode === 1 && matches.length === 0) {
       return {
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
@@ -60,40 +100,29 @@ export const GrepTool = Tool.define("grep", {
       }
     }
 
-    if (exitCode !== 0) {
+    if (exitCode !== 0 && exitCode !== 1) {
       throw new Error(`ripgrep failed: ${errorOutput}`)
     }
 
-    // Handle both Unix (\n) and Windows (\r\n) line endings
-    const lines = output.trim().split(/\r?\n/)
-    const matches = []
-
-    for (const line of lines) {
-      if (!line) continue
-
-      const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
-      if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
-
-      const lineNum = parseInt(lineNumStr, 10)
-      const lineText = lineTextParts.join("|")
-
-      const file = Bun.file(filePath)
+    // Now get file stats in a batch (limit to avoid excessive I/O)
+    const STAT_LIMIT = 1000 // Process at most 1000 matches for stats
+    const statResults = []
+    for (const match of matches.slice(0, STAT_LIMIT)) {
+      const file = Bun.file(match.path)
       const stats = await file.stat().catch(() => null)
-      if (!stats) continue
-
-      matches.push({
-        path: filePath,
-        modTime: stats.mtime.getTime(),
-        lineNum,
-        lineText,
-      })
+      if (stats) {
+        statResults.push({
+          ...match,
+          modTime: stats.mtime.getTime(),
+        })
+      }
     }
 
-    matches.sort((a, b) => b.modTime - a.modTime)
+    statResults.sort((a, b) => b.modTime - a.modTime)
 
-    const limit = 100
-    const truncated = matches.length > limit
-    const finalMatches = truncated ? matches.slice(0, limit) : matches
+    const DISPLAY_LIMIT = 100
+    const truncated = statResults.length > DISPLAY_LIMIT
+    const finalMatches = truncated ? statResults.slice(0, DISPLAY_LIMIT) : statResults
 
     if (finalMatches.length === 0) {
       return {
