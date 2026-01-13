@@ -91,13 +91,20 @@ export function Prompt(props: PromptProps) {
   const pasteStyleId = syntax().getStyleId("extmark.paste")!
   let promptPartTypeId = 0
 
-  sdk.event.on(TuiEvent.PromptAppend.type, (evt) => {
-    input.insertText(evt.properties.text)
-    setTimeout(() => {
-      input.getLayoutNode().markDirty()
-      input.gotoBufferEnd()
-      renderer.requestRender()
-    }, 0)
+  onMount(() => {
+    const promptAppendHandler = (evt: any) => {
+      input.insertText(evt.properties.text)
+      setTimeout(() => {
+        input.getLayoutNode().markDirty()
+        input.gotoBufferEnd()
+        renderer.requestRender()
+      }, 0)
+    }
+    sdk.event.on(TuiEvent.PromptAppend.type, promptAppendHandler)
+
+    onCleanup(() => {
+      sdk.event.off(TuiEvent.PromptAppend.type, promptAppendHandler)
+    })
   })
 
   createEffect(() => {

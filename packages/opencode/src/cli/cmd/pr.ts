@@ -100,11 +100,11 @@ export const PrCommand = cmd({
         })
 
         await new Promise<void>((resolve, reject) => {
-          opencodeProcess.on("exit", (code) => {
+          opencodeProcess.once("exit", (code) => {
             if (code === 0) resolve()
             else reject(new Error(`opencode exited with code ${code}`))
           })
-          opencodeProcess.on("error", reject)
+          opencodeProcess.once("error", reject)
         })
       },
     })

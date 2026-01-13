@@ -56,36 +56,40 @@ export const GrepTool = Tool.define("grep", {
     let byteCount = 0
     const MAX_BYTES = 10 * 1024 * 1024 // 10MB limit to prevent memory exhaustion
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      byteCount += value.length
-      if (byteCount > MAX_BYTES) {
-        reader.cancel()
-        break
+        byteCount += value.length
+        if (byteCount > MAX_BYTES) {
+          reader.cancel()
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() ?? "" // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line) continue
+
+          const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
+          if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
+
+          const lineNum = parseInt(lineNumStr, 10)
+          const lineText = lineTextParts.join("|")
+
+          // Defer file stat until after streaming to avoid blocking
+          matches.push({
+            path: filePath,
+            lineNum,
+            lineText,
+          })
+        }
       }
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split(/\r?\n/)
-      buffer = lines.pop() ?? "" // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (!line) continue
-
-        const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
-        if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
-
-        const lineNum = parseInt(lineNumStr, 10)
-        const lineText = lineTextParts.join("|")
-
-        // Defer file stat until after streaming to avoid blocking
-        matches.push({
-          path: filePath,
-          lineNum,
-          lineText,
-        })
-      }
+    } finally {
+      reader.releaseLock()
     }
 
     // Get exit code and check for errors

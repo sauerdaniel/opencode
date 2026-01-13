@@ -2,7 +2,7 @@ import { render, useKeyboard, useRenderer, useTerminalDimensions } from "@opentu
 import { Clipboard } from "@tui/util/clipboard"
 import { TextAttributes } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
-import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
+import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, onCleanup, batch, Show, on } from "solid-js"
 import { Installation } from "@/installation"
 import { Flag } from "@/flag/flag"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
@@ -583,27 +583,24 @@ function App() {
     }
   })
 
-  sdk.event.on(TuiEvent.CommandExecute.type, (evt) => {
+  const commandExecuteHandler = (evt: any) => {
     command.trigger(evt.properties.command)
-  })
-
-  sdk.event.on(TuiEvent.ToastShow.type, (evt) => {
+  }
+  const toastShowHandler = (evt: any) => {
     toast.show({
       title: evt.properties.title,
       message: evt.properties.message,
       variant: evt.properties.variant,
       duration: evt.properties.duration,
     })
-  })
-
-  sdk.event.on(TuiEvent.SessionSelect.type, (evt) => {
+  }
+  const sessionSelectHandler = (evt: any) => {
     route.navigate({
       type: "session",
       sessionID: evt.properties.sessionID,
     })
-  })
-
-  sdk.event.on(SessionApi.Event.Deleted.type, (evt) => {
+  }
+  const sessionDeletedHandler = (evt: any) => {
     if (route.data.type === "session" && route.data.sessionID === evt.properties.info.id) {
       route.navigate({ type: "home" })
       toast.show({
@@ -611,9 +608,8 @@ function App() {
         message: "The current session was deleted",
       })
     }
-  })
-
-  sdk.event.on(SessionApi.Event.Error.type, (evt) => {
+  }
+  const sessionErrorHandler = (evt: any) => {
     const error = evt.properties.error
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = (() => {
@@ -633,15 +629,30 @@ function App() {
       message,
       duration: 5000,
     })
-  })
-
-  sdk.event.on(Installation.Event.UpdateAvailable.type, (evt) => {
+  }
+  const updateAvailableHandler = (evt: any) => {
     toast.show({
       variant: "info",
       title: "Update Available",
       message: `OpenCode v${evt.properties.version} is available. Run 'opencode upgrade' to update manually.`,
       duration: 10000,
     })
+  }
+
+  sdk.event.on(TuiEvent.CommandExecute.type, commandExecuteHandler)
+  sdk.event.on(TuiEvent.ToastShow.type, toastShowHandler)
+  sdk.event.on(TuiEvent.SessionSelect.type, sessionSelectHandler)
+  sdk.event.on(SessionApi.Event.Deleted.type, sessionDeletedHandler)
+  sdk.event.on(SessionApi.Event.Error.type, sessionErrorHandler)
+  sdk.event.on(Installation.Event.UpdateAvailable.type, updateAvailableHandler)
+
+  onCleanup(() => {
+    sdk.event.off(TuiEvent.CommandExecute.type, commandExecuteHandler)
+    sdk.event.off(TuiEvent.ToastShow.type, toastShowHandler)
+    sdk.event.off(TuiEvent.SessionSelect.type, sessionSelectHandler)
+    sdk.event.off(SessionApi.Event.Deleted.type, sessionDeletedHandler)
+    sdk.event.off(SessionApi.Event.Error.type, sessionErrorHandler)
+    sdk.event.off(Installation.Event.UpdateAvailable.type, updateAvailableHandler)
   })
 
   return (

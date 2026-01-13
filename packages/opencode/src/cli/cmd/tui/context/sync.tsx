@@ -104,7 +104,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     const sdk = useSDK()
 
-    sdk.event.listen((e) => {
+    const unsub = sdk.event.listen((e) => {
       const event = e.details
       switch (event.type) {
         case "server.instance.disposed":
@@ -203,6 +203,21 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               }),
             )
           }
+          // Clean up messages and parts for deleted session to prevent memory leak
+          const sessionID = event.properties.info.id
+          const messages = store.message[sessionID]
+          if (messages) {
+            // Delete all parts for this session's messages
+            for (const message of messages) {
+              delete store.part[message.id]
+            }
+          }
+          delete store.message[sessionID]
+          delete store.session_status[sessionID]
+          delete store.session_diff[sessionID]
+          delete store.todo[sessionID]
+          delete store.permission[sessionID]
+          delete store.question[sessionID]
           break
         }
         case "session.updated": {
@@ -376,6 +391,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     onMount(() => {
       bootstrap()
+    })
+
+    onCleanup(() => {
+      unsub()
     })
 
     const fullSyncedSessions = new Set<string>()
