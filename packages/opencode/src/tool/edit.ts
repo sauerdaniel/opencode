@@ -5,7 +5,9 @@
 
 import z from "zod"
 import * as path from "path"
+import { CommonErrors } from "@opencode-ai/util/error"
 import { Tool } from "./tool"
+import { Log } from "../util/log"
 import { LSP } from "../lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
@@ -18,6 +20,8 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectory } from "./external-directory"
 
 const MAX_DIAGNOSTICS_PER_FILE = 20
+
+const log = Log.create({ service: "edit" })
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -68,9 +72,12 @@ export const EditTool = Tool.define("edit", {
       }
 
       const file = Bun.file(filePath)
-      const stats = await file.stat().catch(() => {})
-      if (!stats) throw new Error(`File ${filePath} not found`)
-      if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
+      const stats = await file.stat().catch((err) => {
+        log.error("failed to stat file for edit", { filePath, error: err })
+        return undefined
+      })
+      if (!stats) throw new CommonErrors.NotFound({ resource: "file", identifier: filePath })
+      if (stats.isDirectory()) throw new CommonErrors.ValidationError({ message: `Path is a directory, not a file: ${filePath}` })
       await FileTime.assert(ctx.sessionID, filePath)
       contentOld = await file.text()
       contentNew = replace(contentOld, params.oldString, params.newString, params.replaceAll)
@@ -607,7 +614,7 @@ export function trimDiff(diff: string): string {
 
 export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
   if (oldString === newString) {
-    throw new Error("oldString and newString must be different")
+    throw new CommonErrors.ValidationError({ message: "oldString and newString must be different" })
   }
 
   let notFound = true
@@ -637,9 +644,9 @@ export function replace(content: string, oldString: string, newString: string, r
   }
 
   if (notFound) {
-    throw new Error("oldString not found in content")
+    throw new CommonErrors.NotFound({ resource: "content", identifier: oldString, message: "oldString not found in content" })
   }
-  throw new Error(
-    "Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match.",
-  )
+  throw new CommonErrors.ValidationError({
+    message: "Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match.",
+  })
 }

@@ -1,4 +1,5 @@
 import { BusEvent } from "@/bus/bus-event"
+import { CommonErrors } from "@opencode-ai/util/error"
 import z from "zod"
 import { $ } from "bun"
 import type { BunFile } from "bun"
@@ -144,7 +145,10 @@ export namespace File {
 
         const top = await fs.promises
           .readdir(Instance.directory, { withFileTypes: true })
-          .catch(() => [] as fs.Dirent[])
+          .catch((err) => {
+            log.error("failed to readdir home directory", { error: err })
+            return [] as fs.Dirent[]
+          })
 
         for (const entry of top) {
           if (!entry.isDirectory()) continue
@@ -152,7 +156,10 @@ export namespace File {
           dirs.add(entry.name + "/")
 
           const base = path.join(Instance.directory, entry.name)
-          const children = await fs.promises.readdir(base, { withFileTypes: true }).catch(() => [] as fs.Dirent[])
+          const children = await fs.promises.readdir(base, { withFileTypes: true }).catch((err) => {
+            log.error("failed to readdir subdirectory", { base, error: err })
+            return [] as fs.Dirent[]
+          })
           for (const child of children) {
             if (!child.isDirectory()) continue
             if (shouldIgnoreNested(child.name)) continue
@@ -241,7 +248,8 @@ export namespace File {
             removed: 0,
             status: "added",
           })
-        } catch {
+        } catch (err) {
+          log.error("failed to read untracked file", { filepath, error: err })
           continue
         }
       }
@@ -280,7 +288,11 @@ export namespace File {
     // TODO: Filesystem.contains is lexical only - symlinks inside the project can escape.
     // TODO: On Windows, cross-drive paths bypass this check. Consider realpath canonicalization.
     if (!Instance.containsPath(full)) {
-      throw new Error(`Access denied: path escapes project directory`)
+      throw new CommonErrors.PermissionDenied({
+        operation: "read",
+        resource: file,
+        message: `path escapes project directory`,
+      })
     }
 
     const bunFile = Bun.file(full)
@@ -292,7 +304,10 @@ export namespace File {
     const encode = await shouldEncode(bunFile)
 
     if (encode) {
-      const buffer = await bunFile.arrayBuffer().catch(() => new ArrayBuffer(0))
+      const buffer = await bunFile.arrayBuffer().catch((err) => {
+        log.error("failed to read binary file", { file, error: err })
+        return new ArrayBuffer(0)
+      })
       const content = Buffer.from(buffer).toString("base64")
       const mimeType = bunFile.type || "application/octet-stream"
       return { type: "text", content, mimeType, encoding: "base64" }
@@ -300,7 +315,10 @@ export namespace File {
 
     const content = await bunFile
       .text()
-      .catch(() => "")
+      .catch((err) => {
+        log.error("failed to read file text", { file, error: err })
+        return ""
+      })
       .then((x) => x.trim())
 
     if (project.vcs === "git") {
@@ -340,7 +358,11 @@ export namespace File {
     // TODO: Filesystem.contains is lexical only - symlinks inside the project can escape.
     // TODO: On Windows, cross-drive paths bypass this check. Consider realpath canonicalization.
     if (!Instance.containsPath(resolved)) {
-      throw new Error(`Access denied: path escapes project directory`)
+      throw new CommonErrors.PermissionDenied({
+        operation: "list",
+        resource: dir,
+        message: `path escapes project directory`,
+      })
     }
 
     const nodes: Node[] = []
@@ -348,7 +370,10 @@ export namespace File {
       .readdir(resolved, {
         withFileTypes: true,
       })
-      .catch(() => [])) {
+      .catch((err) => {
+        log.error("failed to readdir", { dir, resolved, error: err })
+        return []
+      })) {
       if (exclude.includes(entry.name)) continue
       const fullPath = path.join(resolved, entry.name)
       const relativePath = path.relative(Instance.directory, fullPath)

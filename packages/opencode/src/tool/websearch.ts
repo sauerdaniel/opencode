@@ -1,4 +1,5 @@
 import z from "zod"
+import { CommonErrors } from "@opencode-ai/util/error"
 import { Tool } from "./tool"
 import DESCRIPTION from "./websearch.txt"
 
@@ -106,7 +107,12 @@ export const WebSearchTool = Tool.define("websearch", {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`Search error (${response.status}): ${errorText}`)
+        throw new CommonErrors.Network({
+          url: `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SEARCH}`,
+          method: "POST",
+          status: response.status,
+          message: `Search error (${response.status}): ${errorText}`,
+        })
       }
 
       const responseText = await response.text()
@@ -135,7 +141,7 @@ export const WebSearchTool = Tool.define("websearch", {
       clearTimeout(timeoutId)
 
       if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("Search request timed out")
+        throw new CommonErrors.Timeout({ operation: "websearch", timeout: 25000, message: "Search request timed out" })
       }
 
       throw error
