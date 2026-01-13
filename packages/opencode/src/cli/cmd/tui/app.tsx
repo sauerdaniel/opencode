@@ -2,7 +2,7 @@ import { render, useKeyboard, useRenderer, useTerminalDimensions } from "@opentu
 import { Clipboard } from "@tui/util/clipboard"
 import { TextAttributes } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
-import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
+import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, onCleanup, batch, Show, on } from "solid-js"
 import { Installation } from "@/installation"
 import { Flag } from "@/flag/flag"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
@@ -554,27 +554,30 @@ function App() {
     }
   })
 
-  sdk.event.on(TuiEvent.CommandExecute.type, (evt) => {
-    command.trigger(evt.properties.command)
-  })
+  // Store unsubscribe functions for cleanup
+  const unsubs: (() => void)[] = []
 
-  sdk.event.on(TuiEvent.ToastShow.type, (evt) => {
+  unsubs.push(sdk.event.on(TuiEvent.CommandExecute.type, (evt) => {
+    command.trigger(evt.properties.command)
+  }))
+
+  unsubs.push(sdk.event.on(TuiEvent.ToastShow.type, (evt) => {
     toast.show({
       title: evt.properties.title,
       message: evt.properties.message,
       variant: evt.properties.variant,
       duration: evt.properties.duration,
     })
-  })
+  }))
 
-  sdk.event.on(TuiEvent.SessionSelect.type, (evt) => {
+  unsubs.push(sdk.event.on(TuiEvent.SessionSelect.type, (evt) => {
     route.navigate({
       type: "session",
       sessionID: evt.properties.sessionID,
     })
-  })
+  }))
 
-  sdk.event.on(SessionApi.Event.Deleted.type, (evt) => {
+  unsubs.push(sdk.event.on(SessionApi.Event.Deleted.type, (evt) => {
     if (route.data.type === "session" && route.data.sessionID === evt.properties.info.id) {
       route.navigate({ type: "home" })
       toast.show({
@@ -582,9 +585,9 @@ function App() {
         message: "The current session was deleted",
       })
     }
-  })
+  }))
 
-  sdk.event.on(SessionApi.Event.Error.type, (evt) => {
+  unsubs.push(sdk.event.on(SessionApi.Event.Error.type, (evt) => {
     const error = evt.properties.error
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = (() => {
@@ -604,15 +607,19 @@ function App() {
       message,
       duration: 5000,
     })
-  })
+  }))
 
-  sdk.event.on(Installation.Event.UpdateAvailable.type, (evt) => {
+  unsubs.push(sdk.event.on(Installation.Event.UpdateAvailable.type, (evt) => {
     toast.show({
       variant: "info",
       title: "Update Available",
       message: `OpenCode v${evt.properties.version} is available. Run 'opencode upgrade' to update manually.`,
       duration: 10000,
     })
+  }))
+
+  onCleanup(() => {
+    unsubs.forEach((unsub) => unsub())
   })
 
   return (
