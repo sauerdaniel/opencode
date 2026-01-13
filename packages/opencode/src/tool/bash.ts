@@ -215,6 +215,8 @@ export const BashTool = Tool.define("bash", async () => {
         const cleanup = () => {
           clearTimeout(timeoutTimer)
           ctx.abort.removeEventListener("abort", abortHandler)
+          proc.stdout?.off("data", append)
+          proc.stderr?.off("data", append)
         }
 
         proc.once("exit", () => {
