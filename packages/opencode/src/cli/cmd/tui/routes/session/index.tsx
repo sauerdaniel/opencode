@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   Show,
   Switch,
   useContext,
@@ -1250,13 +1251,57 @@ const PART_MAPPING = {
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme, subtleSyntax } = useTheme()
   const ctx = use()
-  const content = createMemo(() => {
+  const sync = useSync()
+
+  // Get streaming throttle config (default 0 = no throttling)
+  const throttleMs = sync.data.config.tui?.streaming_throttle ?? 0
+
+  // Throttle content updates during streaming to reduce CPU usage
+  const isStreaming = createMemo(() => !props.message.time.completed)
+  const shouldThrottle = createMemo(() => isStreaming() && throttleMs > 0)
+
+  // Direct content access (reactive)
+  const rawContent = createMemo(() => {
     // Filter out redacted reasoning chunks from OpenRouter
     // OpenRouter sends encrypted reasoning data that appears as [REDACTED]
     return props.part.text.replace("[REDACTED]", "").trim()
   })
+
+  // When throttling is enabled, create a throttled version of the content
+  const [throttledContent, setThrottledContent] = createSignal(rawContent())
+  let throttleTimeout: ReturnType<typeof setTimeout> | undefined
+
+  createEffect(() => {
+    const content = rawContent()
+    const isComplete = props.message.time.completed
+
+    // If message is complete or throttling disabled, update immediately
+    if (isComplete || !shouldThrottle()) {
+      if (throttleTimeout) {
+        clearTimeout(throttleTimeout)
+        throttleTimeout = undefined
+      }
+      setThrottledContent(content)
+      return
+    }
+
+    // Otherwise, throttle the update
+    if (throttleTimeout) clearTimeout(throttleTimeout)
+    throttleTimeout = setTimeout(() => {
+      setThrottledContent(content)
+      throttleTimeout = undefined
+    }, throttleMs)
+
+    onCleanup(() => {
+      if (throttleTimeout) clearTimeout(throttleTimeout)
+    })
+  })
+
+  // Use throttled content when throttling, otherwise use raw content
+  const displayContent = createMemo(() => shouldThrottle() ? throttledContent() : rawContent())
+
   return (
-    <Show when={content() && ctx.showThinking()}>
+    <Show when={displayContent() && ctx.showThinking()}>
       <box
         id={"text-" + props.part.id}
         paddingLeft={2}
@@ -1271,7 +1316,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
           drawUnstyledText={false}
           streaming={true}
           syntaxStyle={subtleSyntax()}
-          content={"_Thinking:_ " + content()}
+          content={"_Thinking:_ " + displayContent()}
           conceal={ctx.conceal()}
           fg={theme.textMuted}
         />
@@ -1283,15 +1328,62 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  const sync = useSync()
+
+  // Get streaming throttle config (default 0 = no throttling)
+  const throttleMs = sync.data.config.tui?.streaming_throttle ?? 0
+
+  // Throttle content updates during streaming to reduce CPU usage
+  // Only throttle when message is incomplete and throttle is configured
+  const isStreaming = createMemo(() => !props.message.time.completed)
+  const shouldThrottle = createMemo(() => isStreaming() && throttleMs > 0)
+
+  // Direct content access (reactive)
+  const rawContent = createMemo(() => props.part.text.trim())
+
+  // When throttling is enabled, create a throttled version of the content
+  // This reduces OpenTUI re-renders during high-frequency token updates
+  const [throttledContent, setThrottledContent] = createSignal(rawContent())
+  let throttleTimeout: ReturnType<typeof setTimeout> | undefined
+
+  createEffect(() => {
+    const content = rawContent()
+    const isComplete = props.message.time.completed
+
+    // If message is complete or throttling disabled, update immediately
+    if (isComplete || !shouldThrottle()) {
+      if (throttleTimeout) {
+        clearTimeout(throttleTimeout)
+        throttleTimeout = undefined
+      }
+      setThrottledContent(content)
+      return
+    }
+
+    // Otherwise, throttle the update
+    if (throttleTimeout) clearTimeout(throttleTimeout)
+    throttleTimeout = setTimeout(() => {
+      setThrottledContent(content)
+      throttleTimeout = undefined
+    }, throttleMs)
+
+    onCleanup(() => {
+      if (throttleTimeout) clearTimeout(throttleTimeout)
+    })
+  })
+
+  // Use throttled content when throttling, otherwise use raw content
+  const displayContent = createMemo(() => shouldThrottle() ? throttledContent() : rawContent())
+
   return (
-    <Show when={props.part.text.trim()}>
+    <Show when={displayContent()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
         <code
           filetype="markdown"
           drawUnstyledText={false}
           streaming={true}
           syntaxStyle={syntax()}
-          content={props.part.text.trim()}
+          content={displayContent()}
           conceal={ctx.conceal()}
           fg={theme.text}
         />
