@@ -32,9 +32,10 @@ process.on("uncaughtException", (e) => {
 })
 
 // Subscribe to global events and forward them via RPC
-GlobalBus.on("event", (event) => {
+const globalEventHandler = (event: any) => {
   Rpc.emit("global.event", event)
-})
+}
+GlobalBus.on("event", globalEventHandler)
 
 let server: Bun.Server<BunWebSocketData> | undefined
 
@@ -128,6 +129,7 @@ export const rpc = {
   },
   async shutdown() {
     Log.Default.info("worker shutting down")
+    GlobalBus.off("event", globalEventHandler)
     if (eventStream.abort) eventStream.abort.abort()
     await Instance.disposeAll()
     if (server) server.stop(true)
