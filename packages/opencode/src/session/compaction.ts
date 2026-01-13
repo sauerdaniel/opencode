@@ -82,6 +82,8 @@ export namespace SessionCompaction {
       for (const part of toPrune) {
         if (part.state.status === "completed") {
           part.state.time.compacted = Date.now()
+          // Clear the output to actually reclaim memory
+          part.state.output = "[Compacted: Old tool result content cleared]"
           await Session.updatePart(part)
         }
       }

@@ -241,7 +241,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             event.properties.info.sessionID,
             produce((draft) => {
               draft.splice(result.index, 0, event.properties.info)
-              if (draft.length > 100) draft.shift()
+              if (draft.length > 100) {
+                const removed = draft.shift()
+                // Clean up orphaned parts to prevent unbounded memory growth
+                if (removed) {
+                  delete store.part[removed.id]
+                }
+              }
             }),
           )
           break
@@ -257,6 +263,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 draft.splice(result.index, 1)
               }),
             )
+            // Clean up orphaned parts to prevent unbounded memory growth
+            setStore("part", event.properties.messageID, [] as Part[])
           }
           break
         }
