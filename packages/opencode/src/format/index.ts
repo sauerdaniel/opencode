@@ -23,45 +23,52 @@ export namespace Format {
     })
   export type Status = z.infer<typeof Status>
 
-  const state = Instance.state(async () => {
-    const enabled: Record<string, boolean> = {}
-    const cfg = await Config.get()
+  const state = Instance.state(
+    async () => {
+      const enabled: Record<string, boolean> = {}
+      const cfg = await Config.get()
 
-    const formatters: Record<string, Formatter.Info> = {}
-    if (cfg.formatter === false) {
-      log.info("all formatters are disabled")
+      const formatters: Record<string, Formatter.Info> = {}
+      if (cfg.formatter === false) {
+        log.info("all formatters are disabled")
+        return {
+          enabled,
+          formatters,
+          unsubscribe: undefined,
+        }
+      }
+
+      for (const item of Object.values(Formatter)) {
+        formatters[item.name] = item
+      }
+      for (const [name, item] of Object.entries(cfg.formatter ?? {})) {
+        if (item.disabled) {
+          delete formatters[name]
+          continue
+        }
+        const result: Formatter.Info = mergeDeep(formatters[name] ?? {}, {
+          command: [],
+          extensions: [],
+          ...item,
+        })
+
+        if (result.command.length === 0) continue
+
+        result.enabled = async () => true
+        result.name = name
+        formatters[name] = result
+      }
+
       return {
         enabled,
         formatters,
+        unsubscribe: undefined,
       }
-    }
-
-    for (const item of Object.values(Formatter)) {
-      formatters[item.name] = item
-    }
-    for (const [name, item] of Object.entries(cfg.formatter ?? {})) {
-      if (item.disabled) {
-        delete formatters[name]
-        continue
-      }
-      const result: Formatter.Info = mergeDeep(formatters[name] ?? {}, {
-        command: [],
-        extensions: [],
-        ...item,
-      })
-
-      if (result.command.length === 0) continue
-
-      result.enabled = async () => true
-      result.name = name
-      formatters[name] = result
-    }
-
-    return {
-      enabled,
-      formatters,
-    }
-  })
+    },
+    async (state) => {
+      state.unsubscribe?.()
+    },
+  )
 
   async function isEnabled(item: Formatter.Info) {
     const s = await state()
@@ -102,36 +109,39 @@ export namespace Format {
 
   export function init() {
     log.info("init")
-    Bus.subscribe(File.Event.Edited, async (payload) => {
-      const file = payload.properties.file
-      log.info("formatting", { file })
-      const ext = path.extname(file)
+    const s = state()
+    s.then((st) => {
+      st.unsubscribe = Bus.subscribe(File.Event.Edited, async (payload) => {
+        const file = payload.properties.file
+        log.info("formatting", { file })
+        const ext = path.extname(file)
 
-      for (const item of await getFormatter(ext)) {
-        log.info("running", { command: item.command })
-        try {
-          const proc = Bun.spawn({
-            cmd: item.command.map((x) => x.replace("$FILE", file)),
-            cwd: Instance.directory,
-            env: { ...process.env, ...item.environment },
-            stdout: "ignore",
-            stderr: "ignore",
-          })
-          const exit = await proc.exited
-          if (exit !== 0)
-            log.error("failed", {
+        for (const item of await getFormatter(ext)) {
+          log.info("running", { command: item.command })
+          try {
+            const proc = Bun.spawn({
+              cmd: item.command.map((x) => x.replace("$FILE", file)),
+              cwd: Instance.directory,
+              env: { ...process.env, ...item.environment },
+              stdout: "ignore",
+              stderr: "ignore",
+            })
+            const exit = await proc.exited
+            if (exit !== 0)
+              log.error("failed", {
+                command: item.command,
+                ...item.environment,
+              })
+          } catch (error) {
+            log.error("failed to format file", {
+              error,
               command: item.command,
               ...item.environment,
+              file,
             })
-        } catch (error) {
-          log.error("failed to format file", {
-            error,
-            command: item.command,
-            ...item.environment,
-            file,
-          })
+          }
         }
-      }
+      })
     })
   }
 }
