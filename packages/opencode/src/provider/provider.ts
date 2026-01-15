@@ -13,6 +13,7 @@ import { Env } from "../env"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
+import { createLruCache } from "@/util/cache"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock, type AmazonBedrockProviderSettings } from "@ai-sdk/amazon-bedrock"
@@ -680,7 +681,9 @@ export namespace Provider {
     }
 
     const providers: { [providerID: string]: Info } = {}
-    const languages = new Map<string, LanguageModelV2>()
+    const languages = createLruCache<string, LanguageModelV2>({
+      maxEntries: 100,
+    })
     const modelLoaders: {
       [providerID: string]: CustomModelLoader
     } = {}
@@ -948,7 +951,15 @@ export namespace Provider {
     return {
       models: languages,
       providers,
-      sdk,
+      sdk: createLruCache({
+        maxEntries: 50,
+        onEvict: (key, sdk) => {
+          // SDK may have cleanup methods
+          if (sdk && typeof sdk === "object" && "destroy" in sdk) {
+            sdk.destroy?.()
+          }
+        },
+      }),
       modelLoaders,
     }
   })
@@ -980,7 +991,7 @@ export namespace Provider {
 
       const key = Bun.hash.xxHash32(JSON.stringify({ npm: model.api.npm, options }))
       const existing = s.sdk.get(key)
-      if (existing) return existing
+      if (existing) return existing.value
 
       const customFetch = options["fetch"]
 
@@ -1034,7 +1045,7 @@ export namespace Provider {
           name: model.providerID,
           ...options,
         })
-        s.sdk.set(key, loaded)
+        s.sdk.set(key, loaded.value)
         return loaded as SDK
       }
 
@@ -1053,7 +1064,7 @@ export namespace Provider {
         name: model.providerID,
         ...options,
       })
-      s.sdk.set(key, loaded)
+      s.sdk.set(key, loaded.value)
       return loaded as SDK
     } catch (e) {
       throw new InitError({ providerID: model.providerID }, { cause: e })
