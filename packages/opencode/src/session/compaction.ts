@@ -84,6 +84,11 @@ export namespace SessionCompaction {
           part.state.time.compacted = Date.now()
           // Clear the output to actually reclaim memory
           part.state.output = "[Compacted: Old tool result content cleared]"
+          // Clear attachments to reclaim additional memory (e.g., base64 images)
+          part.state.attachments = []
+          // Clear metadata and input to reclaim more memory
+          part.state.metadata = {}
+          part.state.input = {}
           await Session.updatePart(part)
         }
       }
