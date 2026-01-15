@@ -27,10 +27,10 @@ export function Footer() {
     welcome: false,
   })
 
-  onMount(() => {
-    // Track all timeouts to ensure proper cleanup
-    const timeouts: ReturnType<typeof setTimeout>[] = []
+  // Track timeouts at component scope for proper cleanup
+  const timeouts: ReturnType<typeof setTimeout>[] = []
 
+  onMount(() => {
     function tick() {
       if (connected()) return
       if (!store.welcome) {
@@ -46,10 +46,10 @@ export function Footer() {
       }
     }
     timeouts.push(setTimeout(() => tick(), 10_000))
+  })
 
-    onCleanup(() => {
-      timeouts.forEach(clearTimeout)
-    })
+  onCleanup(() => {
+    timeouts.forEach(clearTimeout)
   })
 
   return (
