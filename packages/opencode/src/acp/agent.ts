@@ -369,6 +369,8 @@ export namespace ACP {
       .finally(() => {
         // Clean up abort controller when stream ends
         this.sessionAbortControllers.delete(sessionId)
+        // Clean up session from manager to prevent memory leak
+        this.sessionManager.delete(sessionId)
       })
     }
 

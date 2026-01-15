@@ -54,15 +54,42 @@ export const AcpCommand = cmd({
       const stream = ndJsonStream(input, output)
       const agent = await ACP.init({ sdk })
 
+      let agentInstance: Awaited<ReturnType<typeof agent.create>> | undefined
+
       new AgentSideConnection((conn) => {
-        return agent.create(conn, { sdk })
+        agentInstance = agent.create(conn, { sdk })
+        return agentInstance
       }, stream)
 
       log.info("setup connection")
       process.stdin.resume()
-      await new Promise((resolve, reject) => {
-        process.stdin.on("end", resolve)
-        process.stdin.on("error", reject)
+
+      const cleanup = async () => {
+        log.info("cleaning up agent", { hasAgent: !!agentInstance })
+        if (agentInstance && typeof agentInstance.dispose === "function") {
+          await agentInstance.dispose()
+        }
+      }
+
+      // Setup shutdown handlers
+      const shutdown = async () => {
+        await cleanup()
+        process.exit(0)
+      }
+
+      process.on("SIGINT", shutdown)
+      process.on("SIGTERM", shutdown)
+      process.on("beforeExit", cleanup)
+
+      await new Promise<void>((resolve, reject) => {
+        process.stdin.on("end", async () => {
+          await cleanup()
+          resolve()
+        })
+        process.stdin.on("error", async (err) => {
+          await cleanup()
+          reject(err)
+        })
       })
     })
   },
