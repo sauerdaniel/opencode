@@ -22,6 +22,8 @@ import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
+import { ProviderIcon } from "./provider-icon"
+import type { IconName } from "./provider-icons/types"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 import { Card } from "./card"
@@ -269,17 +271,6 @@ export function SessionTurn(
 
   const isShellMode = createMemo(() => !!shellModePart())
 
-  const hasReasoningParts = createMemo(() => {
-    for (const m of assistantMessages()) {
-      const msgParts = data.store.part[m.id]
-      if (!msgParts) continue
-      for (const p of msgParts) {
-        if (p?.type === "reasoning") return true
-      }
-    }
-    return false
-  })
-
   const rawStatus = createMemo(() => {
     const msgs = assistantMessages()
     let last: PartType | undefined
@@ -385,8 +376,6 @@ export function SessionTurn(
     diffLimit: diffInit,
     status: rawStatus(),
     duration: duration(),
-    userMessageHovered: false,
-    showReasoning: false,
   })
 
   createEffect(
@@ -511,7 +500,13 @@ export function SessionTurn(
                             <span data-slot="session-turn-badge">{(msg() as UserMessage).agent}</span>
                           </Show>
                           <Show when={(msg() as UserMessage).model?.modelID}>
-                            <span data-slot="session-turn-badge">{(msg() as UserMessage).model?.modelID}</span>
+                            <span data-slot="session-turn-badge" class="inline-flex items-center gap-1">
+                              <ProviderIcon
+                                id={(msg() as UserMessage).model!.providerID as IconName}
+                                class="size-3.5 shrink-0"
+                              />
+                              {(msg() as UserMessage).model?.modelID}
+                            </span>
                           </Show>
                           <span data-slot="session-turn-badge">{(msg() as UserMessage).variant || "default"}</span>
                         </div>
@@ -569,7 +564,7 @@ export function SessionTurn(
                               message={assistantMessage}
                               responsePartId={responsePartId()}
                               hideResponsePart={hideResponsePart()}
-                              hideReasoning={!working() && !store.showReasoning}
+                              hideReasoning={!working()}
                             />
                           )}
                         </For>
@@ -601,17 +596,6 @@ export function SessionTurn(
                         </div>
                         <div data-slot="session-turn-summary-header">
                           <h2 data-slot="session-turn-summary-title">Response</h2>
-                          <Show when={hasReasoningParts()}>
-                            <Button
-                              data-slot="session-turn-reasoning-toggle"
-                              variant="ghost"
-                              size="small"
-                              onClick={() => setStore("showReasoning", (prev) => !prev)}
-                            >
-                              <Icon name="eye" size="small" />
-                              <span>{store.showReasoning ? "Hide" : "Show"} thinking</span>
-                            </Button>
-                          </Show>
                           <Markdown
                             data-slot="session-turn-markdown"
                             data-diffs={hasDiffs()}
@@ -690,20 +674,6 @@ export function SessionTurn(
                           >
                             Show more changes ({(msg().summary?.diffs?.length ?? 0) - store.diffLimit})
                           </Button>
-                        </Show>
-                        <Show when={store.showReasoning && hasReasoningParts()}>
-                          <div data-slot="session-turn-reasoning-section">
-                            <For each={assistantMessages()}>
-                              {(assistantMessage) => (
-                                <AssistantMessageItem
-                                  message={assistantMessage}
-                                  responsePartId={responsePartId()}
-                                  hideResponsePart={true}
-                                  hideReasoning={false}
-                                />
-                              )}
-                            </For>
-                          </div>
                         </Show>
                       </div>
                     </Show>

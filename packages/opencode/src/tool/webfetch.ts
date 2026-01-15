@@ -1,5 +1,4 @@
 import z from "zod"
-import { CommonErrors } from "@opencode-ai/util/error"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
@@ -21,7 +20,7 @@ export const WebFetchTool = Tool.define("webfetch", {
   async execute(params, ctx) {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
-      throw new CommonErrors.ValidationError({ message: "URL must start with http:// or https://" })
+      throw new Error("URL must start with http:// or https://")
     }
 
     await ctx.ask({
@@ -57,39 +56,31 @@ export const WebFetchTool = Tool.define("webfetch", {
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
     }
 
-    let response: Response
-    try {
-      response = await fetch(params.url, {
-        signal: AbortSignal.any([controller.signal, ctx.abort]),
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: acceptHeader,
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetch(params.url, {
+      signal: AbortSignal.any([controller.signal, ctx.abort]),
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+        Accept: acceptHeader,
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
-      throw new CommonErrors.Network({
-        url: params.url,
-        method: "GET",
-        status: response.status,
-        message: `Request failed with status code: ${response.status}`,
-      })
+      throw new Error(`Request failed with status code: ${response.status}`)
     }
 
     // Check content length
     const contentLength = response.headers.get("content-length")
     if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
-      throw new CommonErrors.ValidationError({ message: "Response too large (exceeds 5MB limit)" })
+      throw new Error("Response too large (exceeds 5MB limit)")
     }
 
     const arrayBuffer = await response.arrayBuffer()
     if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-      throw new CommonErrors.ValidationError({ message: "Response too large (exceeds 5MB limit)" })
+      throw new Error("Response too large (exceeds 5MB limit)")
     }
 
     const content = new TextDecoder().decode(arrayBuffer)

@@ -3,7 +3,6 @@ import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
 import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/dialog-model"
-import { useLocal } from "../../context/local"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 
@@ -11,11 +10,9 @@ export function Footer() {
   const { theme } = useTheme()
   const sync = useSync()
   const route = useRoute()
-  const local = useLocal()
   const mcp = createMemo(() => Object.values(sync.data.mcp).filter((x) => x.status === "connected").length)
   const mcpError = createMemo(() => Object.values(sync.data.mcp).some((x) => x.status === "failed"))
   const lsp = createMemo(() => Object.keys(sync.data.lsp))
-  const agents = createMemo(() => local.agent.list().length)
   const permissions = createMemo(() => {
     if (route.data.type !== "session") return []
     return sync.data.permission[route.data.sessionID] ?? []
@@ -28,7 +25,8 @@ export function Footer() {
   })
 
   onMount(() => {
-    const timeouts: number[] = []
+    // Track all timeouts to ensure proper cleanup
+    const timeouts: ReturnType<typeof setTimeout>[] = []
 
     function tick() {
       if (connected()) return
@@ -68,10 +66,6 @@ export function Footer() {
                 {permissions().length > 1 ? "s" : ""}
               </text>
             </Show>
-            <text fg={theme.text}>
-              <span style={{ fg: theme.success }}>◈</span> {agents()} Agent
-              {agents() > 1 ? "s" : ""}
-            </text>
             <text fg={theme.text}>
               <span style={{ fg: lsp().length > 0 ? theme.success : theme.textMuted }}>•</span> {lsp().length} LSP
             </text>
