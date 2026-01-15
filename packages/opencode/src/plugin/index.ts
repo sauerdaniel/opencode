@@ -96,9 +96,11 @@ export namespace Plugin {
       return {
         hooks,
         input,
+        unsubscribe: undefined,
       }
     },
     async (state) => {
+      state.unsubscribe?.()
       for (const hook of state.hooks) {
         await hook.dispose?.()
       }
@@ -127,19 +129,22 @@ export namespace Plugin {
   }
 
   export async function init() {
-    const hooks = await state().then((x) => x.hooks)
+    const s = state()
+    const hooks = await s.then((x) => x.hooks)
     const config = await Config.get()
     for (const hook of hooks) {
       // @ts-expect-error this is because we haven't moved plugin to sdk v2
       await hook.config?.(config)
     }
-    Bus.subscribeAll(async (input) => {
-      const hooks = await state().then((x) => x.hooks)
-      for (const hook of hooks) {
-        hook["event"]?.({
-          event: input,
-        })
-      }
+    s.then((st) => {
+      st.unsubscribe = Bus.subscribeAll(async (input) => {
+        const hooks = await state().then((x) => x.hooks)
+        for (const hook of hooks) {
+          hook["event"]?.({
+            event: input,
+          })
+        }
+      })
     })
   }
 }

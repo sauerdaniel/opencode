@@ -67,6 +67,8 @@ export const Instance = {
   },
   async dispose() {
     Log.Default.info("disposing instance", { directory: Instance.directory })
+    const { dispose: disposeBootstrap } = await import("../project/bootstrap")
+    await disposeBootstrap?.()
     await State.dispose(Instance.directory)
     cache.delete(Instance.directory)
     GlobalBus.emit("event", {
