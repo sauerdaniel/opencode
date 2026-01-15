@@ -29,8 +29,10 @@ export function Footer() {
 
   onMount(() => {
     const timeouts: number[] = []
+    let mounted = true
 
     function tick() {
+      if (!mounted) return
       if (connected()) return
       if (!store.welcome) {
         setStore("welcome", true)
@@ -47,6 +49,7 @@ export function Footer() {
     timeouts.push(setTimeout(() => tick(), 10_000))
 
     onCleanup(() => {
+      mounted = false
       timeouts.forEach(clearTimeout)
     })
   })
