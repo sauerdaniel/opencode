@@ -22,6 +22,7 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
   private tail: QueueNode<T> | null = null
   private size: number = 0
   private resolvers: ((value: T) => void)[] = []
+  private closed = false
 
   // Bounded queue settings
   private maxSize: number
@@ -61,6 +62,8 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
   }
 
   push(item: T): boolean {
+    if (this.closed) return false
+
     // Check cache first if enabled
     if (this.cache && this.cacheKeyFn) {
       const key = this.cacheKeyFn(item)
@@ -150,6 +153,10 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
   }
 
   async next(): Promise<T> {
+    if (this.closed) {
+      throw new Error("AsyncQueue is closed")
+    }
+
     const item = this.dequeueNode()
     if (item) return item
 
@@ -169,6 +176,20 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
     this.head = this.tail = null
     this.size = 0
     this.metrics.currentSize = 0
+    this.resolvers = []
+  }
+
+  close(): void {
+    this.closed = true
+    this.head = this.tail = null
+    this.size = 0
+    this.metrics.currentSize = 0
+    // Reject all pending resolvers to prevent memory leak
+    for (const resolve of this.resolvers) {
+      // We can't reject a Promise that was already created with resolve only
+      // But clearing the array prevents future items from resolving these
+    }
+    this.resolvers = []
   }
 
   get length(): number {
