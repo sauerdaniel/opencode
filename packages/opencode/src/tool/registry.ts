@@ -30,34 +30,40 @@ import { PlanExitTool, PlanEnterTool } from "./plan"
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
 
-  export const state = Instance.state(async () => {
-    const custom = [] as Tool.Info[]
-    const glob = new Bun.Glob("{tool,tools}/*.{js,ts}")
+  export const state = Instance.state(
+    async () => {
+      const custom = [] as Tool.Info[]
+      const glob = new Bun.Glob("{tool,tools}/*.{js,ts}")
 
-    for (const dir of await Config.directories()) {
-      for await (const match of glob.scan({
-        cwd: dir,
-        absolute: true,
-        followSymlinks: true,
-        dot: true,
-      })) {
-        const namespace = path.basename(match, path.extname(match))
-        const mod = await import(match)
-        for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
-          custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+      for (const dir of await Config.directories()) {
+        for await (const match of glob.scan({
+          cwd: dir,
+          absolute: true,
+          followSymlinks: true,
+          dot: true,
+        })) {
+          const namespace = path.basename(match, path.extname(match))
+          const mod = await import(match)
+          for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
+            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+          }
         }
       }
-    }
 
-    const plugins = await Plugin.list()
-    for (const plugin of plugins) {
-      for (const [id, def] of Object.entries(plugin.tool ?? {})) {
-        custom.push(fromPlugin(id, def))
+      const plugins = await Plugin.list()
+      for (const plugin of plugins) {
+        for (const [id, def] of Object.entries(plugin.tool ?? {})) {
+          custom.push(fromPlugin(id, def))
+        }
       }
-    }
 
-    return { custom }
-  })
+      return { custom }
+    },
+    async (state) => {
+      state.custom.length = 0
+      log.info("Tool registry disposed", { toolCount: state.custom.length })
+    }
+  )
 
   function fromPlugin(id: string, def: ToolDefinition): Tool.Info {
     return {
@@ -86,6 +92,15 @@ export namespace ToolRegistry {
       return
     }
     custom.push(tool)
+  }
+
+  export async function unregister(id: string) {
+    const { custom } = await state()
+    const idx = custom.findIndex((t) => t.id === id)
+    if (idx >= 0) {
+      custom.splice(idx, 1)
+      log.info("Unregistered tool", { id })
+    }
   }
 
   async function all(): Promise<Tool.Info[]> {
