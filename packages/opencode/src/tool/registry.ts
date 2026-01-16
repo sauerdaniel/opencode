@@ -29,9 +29,10 @@ import { Truncate } from "./truncation"
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
 
-  export const state = Instance.state(async () => {
-    const custom = [] as Tool.Info[]
-    const glob = new Bun.Glob("tool/*.{js,ts}")
+  export const state = Instance.state(
+    async () => {
+      const custom = [] as Tool.Info[]
+      const glob = new Bun.Glob("tool/*.{js,ts}")
 
     for (const dir of await Config.directories()) {
       for await (const match of glob.scan({
@@ -56,7 +57,12 @@ export namespace ToolRegistry {
     }
 
     return { custom }
-  })
+  },
+  async (state) => {
+    state.custom.length = 0
+    log.info("Tool registry disposed", { toolCount: state.custom.length })
+  }
+)
 
   function fromPlugin(id: string, def: ToolDefinition): Tool.Info {
     return {
@@ -85,6 +91,15 @@ export namespace ToolRegistry {
       return
     }
     custom.push(tool)
+  }
+
+  export async function unregister(id: string) {
+    const { custom } = await state()
+    const idx = custom.findIndex((t) => t.id === id)
+    if (idx >= 0) {
+      custom.splice(idx, 1)
+      log.info("Unregistered tool", { id })
+    }
   }
 
   async function all(): Promise<Tool.Info[]> {
