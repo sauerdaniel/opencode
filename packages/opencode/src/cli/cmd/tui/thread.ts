@@ -153,6 +153,7 @@ export const TuiThreadCommand = cmd({
       },
       onExit: async () => {
         await client.call("shutdown", undefined)
+        client.dispose()
       },
     })
 
