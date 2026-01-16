@@ -61,6 +61,17 @@ export namespace Rpc {
           handlers!.delete(handler)
         }
       },
+      dispose() {
+        // Reject all pending requests
+        for (const [id, resolve] of pending) {
+          resolve(undefined as any)
+        }
+        pending.clear()
+        // Clear all event listeners
+        listeners.clear()
+        // Clear the message handler
+        target.onmessage = null
+      },
     }
   }
 }
