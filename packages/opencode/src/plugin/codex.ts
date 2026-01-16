@@ -521,5 +521,6 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
         },
       ],
     },
+    dispose: stopOAuthServer,
   }
 }
