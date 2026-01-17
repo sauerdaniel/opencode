@@ -241,6 +241,8 @@ export namespace LSPClient {
         connection.end()
         connection.dispose()
         input.server.process.kill()
+        diagnostics.clear()
+        for (const path in files) delete files[path]
         l.info("shutdown")
       },
     }
